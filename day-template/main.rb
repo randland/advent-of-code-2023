@@ -16,17 +16,10 @@ end
 EXAMPLE = parse file "example"
 INPUT = parse file "input"
 
-puts <<~END
-##########
-# Part 1 #
-##########
-Example: #{part1 EXAMPLE}
-END
-__END__
-Solution: #{part1 INPUT}
-
-##########
-# Part 2 #
-##########
-Example: #{part2 EXAMPLE}
-Solution: #{part2 INPUT}
+puts "# Part 1 #"
+puts "Example: #{part1 EXAMPLE}"
+# puts "Solution: #{part1 INPUT}"
+# puts
+# puts "# Part 2 #"
+# puts "Example: #{part2 EXAMPLE}"
+# puts "Solution: #{part2 INPUT}"
