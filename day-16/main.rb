@@ -3,93 +3,102 @@ require "pry"
 
 def file(path) = File.read(File.join(__dir__, path))
 
-def parse(data) = data.split("\n").map(&:chars)
+def parse(data) = data
 
-MIRRORS = {
-  ?| => { n: %i[n], s: %i[s], e: %i[n s], w: %i[n s] },
-  ?- => { n: %i[e w], s: %i[e w], e: %i[e], w: %i[w] },
-  ?/ => { n: %i[e], s: %i[w], e: %i[n], w: %i[s] },
-  ?\\ => { n: %i[w], s: %i[e], e: %i[s], w: %i[n] },
-  ?. => { n: %i[n], s: %i[s], e: %i[e], w: %i[w] }
-}
+Laser = Data.define(:dir, :pos) do
+  def step = Laser.new(dir, next_pos)
 
-def offset(dir, r, c)
-  case dir
-  when :n then [r - 1, c]
-  when :s then [r + 1, c]
-  when :e then [r, c + 1]
-  when :w then [r, c - 1]
-  end
-end
+  def r = pos.first
+  def c = pos.last
 
-def move(laser) = Laser.new(offset(laser.dir, *laser.pos), laser.dir)
-def mirror_at(data, laser) = data[laser.pos.first][laser.pos.last]
-
-def split(laser, mirror)
-  MIRRORS[mirror][laser.dir].map do |dir|
-    Laser.new(laser.pos, dir)
-  end
-end
-
-class Laser
-  attr_accessor :pos, :dir
-  def initialize(pos, dir)
-    @pos = pos
-    @dir = dir
-  end
-
-  def inspect
-    "#{dir}@(#{pos.first}, #{pos.last})"
-  end
-end
-
-def score(data, start_laser)
-  mirrors = Set.new
-  laser_counts = {}
-  lasers = [start_laser]
-
-  while lasers.any?
-    next_step = move(lasers.first)
-    next_pos = next_step.pos
-
-    if next_pos.first < 0 || next_pos.first >= data.length ||
-        next_pos.last < 0 || next_pos.last >= data.first.length
-      lasers.shift
-    else
-      mirror = mirror_at(data, next_step)
-      if mirror == "."
-        laser_counts[next_step.pos] ||= Set.new
-        if laser_counts[next_step.pos].include?(next_step.dir)
-          lasers.shift
-        else
-          laser_counts[next_step.pos] << next_step.dir
-          lasers[0] = next_step
-        end
-      else
-        mirrors << next_step.pos
-        lasers[0] = split(next_step, mirror)
-      end
+  def next_pos
+    case dir
+    when :n then [r - 1, c]
+    when :s then [r + 1, c]
+    when :e then [r, c + 1]
+    when :w then [r, c - 1]
     end
-    lasers.flatten!
+  end
+end
+
+class LaserMap
+  RunResult = Data.define(:num_energized, :exits)
+
+  DEST_MAP = {
+    ?|  => { n: %i[n],   s: %i[s],   e: %i[n s], w: %i[n s] },
+    ?-  => { n: %i[e w], s: %i[e w], e: %i[e],   w: %i[w]   },
+    ?/  => { n: %i[e],   s: %i[w],   e: %i[n],   w: %i[s]   },
+    ?\\ => { n: %i[w],   s: %i[e],   e: %i[s],   w: %i[n]   },
+    ?.  => { n: %i[n],   s: %i[s],   e: %i[e],   w: %i[w]   }
+  }
+
+  attr_reader :map
+
+  def initialize(data)
+    @map = data.split("\n").map(&:chars)
   end
 
-  laser_counts.count + mirrors.count
+  def rows = map.length
+  def cols = map.first.length
+
+  def sym_at(pos)
+    return unless pos.none?(&:negative?)
+    map.dig(pos.first, pos.last)
+  end
+
+  def step(laser)
+    DEST_MAP[sym_at(laser.pos)][laser.dir].map { |dir| Laser.new(dir, laser.pos) }
+  end
+
+  def run_laser(dir, pos)
+    lasers = [Laser.new(dir, pos)]
+    energized = Hash.new { |h, v| h[v] = Set.new }
+    exits = Set.new
+
+    while lasers.any?
+      next_step = lasers.first.step
+
+      if sym_at(next_step.pos).nil?
+        exits << next_step.pos
+        next lasers.shift
+      end
+
+      if energized[next_step.pos].include?(next_step.dir)
+        next lasers.shift
+      else
+        energized[next_step.pos] << next_step.dir
+      end
+
+      lasers[0] = step(next_step)
+      lasers.flatten!
+    end
+
+    RunResult.new(energized.count, exits)
+  end
 end
 
 def part1(data)
-  score(data, Laser.new([0, -1], :e))
+  LaserMap.new(data).run_laser(:e, [0, -1]).num_energized
 end
 
 def part2(data)
-  r_count = data.length
-  c_count = data.first.length
+  map = LaserMap.new(data)
+  r_count = map.rows
+  c_count = map.cols
 
-  start_lasers = (0...r_count).map { |r| [[r, -1], :e] } +
-                 (0...r_count).map { |r| [[r, c_count], :w] } +
-                 (0...c_count).map { |c| [[-1, c], :s] } +
-                 (0...c_count).map { |c| [[r_count, c], :n] }
+  start_args = (0...r_count).map { |r| [:e, [r, -1]] } +
+               (0...r_count).map { |r| [:w, [r, c_count]] } +
+               (0...c_count).map { |c| [:s, [-1, c]] } +
+               (0...c_count).map { |c| [:n, [r_count, c]] }
 
-  start_lasers.map { |l| score(data, Laser.new(*l)) }.max
+  exits = Set.new
+
+  start_args.map do |laser_args|
+    next 0 if exits.include?(laser_args.last)
+    results = map.run_laser(*laser_args)
+    exits += results.exits
+    results.num_energized
+  end.max
 end
 
 EXAMPLE = parse file "example"
