@@ -9,7 +9,6 @@ def parse(data)
 end
 
 def part1(data)
-  binding.pry
   data.inspect
 end
 
